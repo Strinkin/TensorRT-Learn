@@ -1,0 +1,4 @@
+/home/strinkin/tensorrt/TensorRT-Learn/mnist/build/CMakeFiles/mnist_strinkin.dir
+/home/strinkin/tensorrt/TensorRT-Learn/mnist/build/CMakeFiles/mnist_onnx.dir
+/home/strinkin/tensorrt/TensorRT-Learn/mnist/build/CMakeFiles/edit_cache.dir
+/home/strinkin/tensorrt/TensorRT-Learn/mnist/build/CMakeFiles/rebuild_cache.dir

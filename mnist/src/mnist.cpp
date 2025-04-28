@@ -9,12 +9,16 @@
 #include <cassert>
 #include <vector>
 #include <algorithm> // 包含std::max_element
+#include <chrono>
 
 #include <opencv2/opencv.hpp>
+
 #include <NvInfer.h>
+#include "NvOnnxParser.h"
 
 #include "logging.h"
 #include "commom.h"
+
 static const int INPUT_H = 28;
 static const int INPUT_W = 28;
 static const int INPUT_C = 1;
@@ -186,7 +190,7 @@ bool saveEngine(SampleUniquePtr<nvinfer1::IHostMemory>& serialized_model, const 
     return true;
 }
 
-bool serializeEngine(const string& wts_file_path, const string& save_engine_path="default_name.engine") {
+bool serializeEngineWts(const string& wts_file_path, const string& save_engine_path="default_name_wts.engine") {
     map<string, nvinfer1::Weights> weights_map = readWtsFromFile(wts_file_path);
     SampleUniquePtr<nvinfer1::IBuilder>builder(nvinfer1::createInferBuilder(logger)); // 构建器构建网络和配置
     SampleUniquePtr<nvinfer1::INetworkDefinition>network = defineNetwork(weights_map, builder); // 定义网络
@@ -206,6 +210,41 @@ bool serializeEngine(const string& wts_file_path, const string& save_engine_path
     }
 
     return true;
+}
+
+bool serializeEngineFromOnnx(const string& onnx_file_path, const string& save_engine_path="default_name_onnx.engine") {
+    SampleUniquePtr<nvinfer1::IBuilder>builder(nvinfer1::createInferBuilder(logger)); // 构建器构建网络和配置
+    assert(builder != nullptr);
+
+    auto flag = 1U << static_cast<uint32_t>(nvinfer1::NetworkDefinitionCreationFlag::kEXPLICIT_BATCH); 
+        // 0：  
+        // 表示不使用任何特殊标志，通常用于创建一个普通的静态网络。
+        // 1U << static_cast<uint32_t>(nvinfer1::NetworkDefinitionCreationFlag::kEXPLICIT_BATCH)：
+        // 表示启用显式批量（Explicit Batch）模式。这是TensorRT 7及以上版本引入的一个重要特性，允许网络支持动态输入尺寸。
+    SampleUniquePtr<nvinfer1::INetworkDefinition>network(builder->createNetworkV2(flag)); // 创建网络
+    assert(network != nullptr);
+
+    SampleUniquePtr<nvonnxparser::IParser> parser(nvonnxparser::createParser(*network, logger)); // 解析器解析onnx模型
+    assert(parser != nullptr);
+
+    parser->parseFromFile(onnx_file_path.c_str(), // onnx模型路径
+        static_cast<int32_t>(nvinfer1::ILogger::Severity::kWARNING)); // 日志级别
+    for (int32_t i = 0; i < parser->getNbErrors(); ++i) { // 遍历错误信息
+        std::cout << parser->getError(i)->desc() << std::endl; // 打印错误信息
+    }
+
+    SampleUniquePtr<nvinfer1::IBuilderConfig>config = setConfig(builder); // 配置
+    assert(config != nullptr);
+
+    SampleUniquePtr<nvinfer1::IHostMemory>serialized_model(builder->buildSerializedNetwork(*network, *config)); // 构建序列化模型
+    assert(serialized_model != nullptr);
+
+    if (saveEngine(serialized_model, save_engine_path)) {
+        cout << "save engine success" << endl;
+    } else {
+        cout << "save engine failed" << endl;
+        return false;
+    }
 }
 
 std::vector<char> readModelFromFile(const std::string& engine_path) {
@@ -260,12 +299,17 @@ cv::Mat resizeAndPad(const cv::Mat& src, int targetSize) {
 
 int main(const int argc, const char** argv) {
     string wts_file_path = "../models/mnist.wts";
+    string onnx_file_path = "../models/mnist.onnx";
     string save_engine_path = "../models/mnist.engine";
-    // if(!serializeEngine(wts_file_path, save_engine_path)) { return -1; };
+    string model_format = "onnx"; // wts or onnx
+    if (model_format == "onnx") 
+        OUTPUT_BLOB_NAME = "output";
+
+    // if(!serializeEngineWts(wts_file_path, save_engine_path)) { return -1; };
     // if(0) 
     if(1) 
     {
-        string engine_path = "../models/mnist.engine";
+        string engine_path = "../models/mnist_onnx.engine";
         SampleUniquePtr<nvinfer1::IRuntime>runtime(nvinfer1::createInferRuntime(logger)); // 运行时记录器
         assert(runtime != nullptr);
         std::vector<char> model_data = readModelFromFile(engine_path);
@@ -283,7 +327,7 @@ int main(const int argc, const char** argv) {
         nvinfer1::Dims input_dims = {4, {1, INPUT_C, INPUT_H, INPUT_W}};
         context->setInputShape(INPUT_BLOB_NAME, input_dims);
         
-        Mat img_src = imread("../pic/num3.png", IMREAD_GRAYSCALE);
+        Mat img_src = imread("../pic/num6.png", IMREAD_GRAYSCALE);
         Mat img = resizeAndPad(img_src, INPUT_H);
         imshow("img_src", img_src);
         float data[INPUT_C * INPUT_H * INPUT_W];
@@ -292,13 +336,20 @@ int main(const int argc, const char** argv) {
         }
 
         cudaStream_t stream;
-        CHECK(cudaStreamCreate(&stream));
-        CHECK(cudaMemcpy(device_buffers[0], data, sizeof(float) * INPUT_C * INPUT_H * INPUT_W, cudaMemcpyHostToDevice));
-        // CHECK(cudaMemcpy2D((void*)device_buffers[0], sizeof(float) * INPUT_W, data, sizeof(float) * INPUT_W, sizeof(float) * INPUT_W, sizeof(float) * INPUT_H, cudaMemcpyHostToDevice));
-        context->enqueueV3(stream);
         float prob[OUTPUT_SIZE] = {0};
-        CHECK(cudaMemcpy(prob, device_buffers[1], sizeof(float) * OUTPUT_SIZE, cudaMemcpyDeviceToHost));
+        for (int i = 0; i < 100; i++) {
+            auto start = std::chrono::high_resolution_clock::now();
 
+            CHECK(cudaStreamCreate(&stream));
+            CHECK(cudaMemcpy(device_buffers[0], data, sizeof(float) * INPUT_C * INPUT_H * INPUT_W, cudaMemcpyHostToDevice));
+            // CHECK(cudaMemcpy2D((void*)device_buffers[0], sizeof(float) * INPUT_W, data, sizeof(float) * INPUT_W, sizeof(float) * INPUT_W, sizeof(float) * INPUT_H, cudaMemcpyHostToDevice));
+            context->enqueueV3(stream);
+            CHECK(cudaMemcpy(prob, device_buffers[1], sizeof(float) * OUTPUT_SIZE, cudaMemcpyDeviceToHost));
+
+            auto end = std::chrono::high_resolution_clock::now();
+            std::cout << "Inference time: " << std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() << " us" << std::endl;
+            
+        }
         // Print histogram of the output distribution
         std::cout << "\nOutput:\n";
         for (unsigned int i = 0; i < OUTPUT_SIZE; i++)

@@ -1,0 +1,12 @@
+[
+{
+  "directory": "/home/strinkin/tensorrt/TensorRT-Learn/mnist/build",
+  "command": "/usr/bin/c++  -I/usr/local/cuda/include -I/usr/local/TensorRT-8.6.1.6/include -I/home/strinkin/tensorrt/TensorRT-Learn/mnist/include -isystem /usr/local/include/opencv4 -g -std=gnu++11 -o CMakeFiles/mnist_strinkin.dir/src/mnist.cpp.o -c /home/strinkin/tensorrt/TensorRT-Learn/mnist/src/mnist.cpp",
+  "file": "/home/strinkin/tensorrt/TensorRT-Learn/mnist/src/mnist.cpp"
+},
+{
+  "directory": "/home/strinkin/tensorrt/TensorRT-Learn/mnist/build",
+  "command": "/usr/bin/c++  -I/usr/local/cuda/include -I/usr/local/TensorRT-8.6.1.6/include -I/home/strinkin/tensorrt/TensorRT-Learn/mnist/include -isystem /usr/local/include/opencv4 -g -std=gnu++11 -o CMakeFiles/mnist_onnx.dir/src/mnist_onnx.cpp.o -c /home/strinkin/tensorrt/TensorRT-Learn/mnist/src/mnist_onnx.cpp",
+  "file": "/home/strinkin/tensorrt/TensorRT-Learn/mnist/src/mnist_onnx.cpp"
+}
+]
